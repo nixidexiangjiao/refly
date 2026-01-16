@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../common/prisma.service';
 import {
   User,
@@ -9,6 +8,7 @@ import {
   NodeDiff,
   RawCanvasData,
   ToolsetDefinition,
+  ListWorkflowExecutionsData,
 } from '@refly/openapi-schema';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { WorkflowCompletedEvent, WorkflowFailedEvent } from './workflow.events';
@@ -21,7 +21,6 @@ import {
   purgeHistoryForActionResult,
 } from '@refly/canvas-common';
 import { SkillService } from '../skill/skill.service';
-import { ActionService } from '../action/action.service';
 import { CanvasService } from '../canvas/canvas.service';
 import { CanvasSyncService } from '../canvas-sync/canvas-sync.service';
 import {
@@ -35,19 +34,39 @@ import { ToolInventoryService } from '../tool/inventory/inventory.service';
 import { ToolService } from '../tool/tool.service';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { WorkflowNodeExecution as WorkflowNodeExecutionPO } from '@prisma/client';
+import { Prisma, WorkflowNodeExecution as WorkflowNodeExecutionPO } from '@prisma/client';
 import { QUEUE_POLL_WORKFLOW, QUEUE_RUN_WORKFLOW } from '../../utils/const';
 import { WorkflowExecutionNotFoundError } from '@refly/errors';
 import { RedisService } from '../common/redis.service';
 import { PollWorkflowJobData, RunWorkflowJobData } from './workflow.dto';
 import { CreditService } from '../credit/credit.service';
+import { VoucherService } from '../voucher/voucher.service';
 import { ceil } from 'lodash';
 import { SkillInvokerService } from '../skill/skill-invoker.service';
 import { WORKFLOW_EXECUTION_CONSTANTS } from './workflow.constants';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class WorkflowService {
   private readonly logger = new Logger(WorkflowService.name);
+
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
+    private readonly skillService: SkillService,
+    private readonly canvasService: CanvasService,
+    private readonly canvasSyncService: CanvasSyncService,
+    private readonly toolInventoryService: ToolInventoryService,
+    private readonly toolService: ToolService,
+    private readonly creditService: CreditService,
+    private readonly skillInvokerService: SkillInvokerService,
+    private readonly voucherService: VoucherService,
+    private readonly eventEmitter: EventEmitter2,
+    @InjectQueue(QUEUE_RUN_WORKFLOW) private readonly runWorkflowQueue?: Queue<RunWorkflowJobData>,
+    @InjectQueue(QUEUE_POLL_WORKFLOW)
+    private readonly pollWorkflowQueue?: Queue<PollWorkflowJobData>,
+  ) {}
 
   /**
    * Get poll interval from config, falling back to constants default
@@ -88,24 +107,6 @@ export class WorkflowService {
       WORKFLOW_EXECUTION_CONSTANTS.POLL_LOCK_TTL_MS
     );
   }
-
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly redis: RedisService,
-    private readonly configService: ConfigService,
-    private readonly skillService: SkillService,
-    private readonly actionService: ActionService,
-    private readonly canvasService: CanvasService,
-    private readonly canvasSyncService: CanvasSyncService,
-    private readonly toolInventoryService: ToolInventoryService,
-    private readonly toolService: ToolService,
-    private readonly creditService: CreditService,
-    private readonly skillInvokerService: SkillInvokerService,
-    private readonly eventEmitter: EventEmitter2,
-    @InjectQueue(QUEUE_RUN_WORKFLOW) private readonly runWorkflowQueue?: Queue<RunWorkflowJobData>,
-    @InjectQueue(QUEUE_POLL_WORKFLOW)
-    private readonly pollWorkflowQueue?: Queue<PollWorkflowJobData>,
-  ) {}
 
   private async buildLookupToolsetDefinitionById(
     user: User,
@@ -227,6 +228,37 @@ export class WorkflowService {
         variables: finalVariables,
         duplicateDriveFile: false,
       });
+    }
+
+    // Check if there is no successful execution today to trigger voucher
+    try {
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+
+      const executionsToday = await this.prisma.workflowExecution.count({
+        where: {
+          uid: user.uid,
+          createdAt: {
+            gte: todayStart,
+          },
+        },
+      });
+
+      if (executionsToday === 0 && canvasData) {
+        this.voucherService
+          .handleCreateVoucherFromSource(
+            user,
+            { title: canvasData?.title, nodes: canvasData?.nodes },
+            finalVariables,
+            'run_workflow',
+            canvasId,
+          )
+          .catch((err) => {
+            this.logger.error(`Failed to handle template publish for voucher: ${err.message}`);
+          });
+      }
+    } catch (err) {
+      this.logger.error(`Failed to check today's executions for voucher: ${err.message}`);
     }
 
     const lookupToolsetDefinitionById = await this.buildLookupToolsetDefinitionById(user);
@@ -1070,6 +1102,71 @@ export class WorkflowService {
   }
 
   /**
+   * List workflow executions with pagination
+   * @param user - The user requesting the workflow details
+   * @param params - Pagination and filter parameters
+   * @returns Promise<{ executions: WorkflowExecution[], total: number }> - Paginated workflow execution details
+   */
+  async listWorkflowExecutions(user: User, params: ListWorkflowExecutionsData['query'] = {}) {
+    const {
+      canvasId,
+      status,
+      after,
+      page: rawPage = 1,
+      pageSize: rawPageSize = 10,
+      order = 'creationDesc',
+    } = params;
+
+    const page = Math.max(1, rawPage);
+    const pageSize = Math.min(100, Math.max(1, rawPageSize));
+    const skip = (page - 1) * pageSize;
+
+    // Build where clause
+    const whereClause: Prisma.WorkflowExecutionWhereInput = { uid: user.uid };
+    if (canvasId) {
+      whereClause.canvasId = canvasId;
+    }
+    if (status) {
+      whereClause.status = status;
+    }
+    if (after != null) {
+      // after is unix timestamp in milliseconds
+      whereClause.createdAt = {
+        gt: new Date(after),
+      };
+    }
+
+    // Build order by
+    const orderBy: Prisma.WorkflowExecutionOrderByWithRelationInput = {};
+    if (order === 'creationAsc') {
+      orderBy.createdAt = 'asc';
+    } else if (order === 'creationDesc') {
+      orderBy.createdAt = 'desc';
+    } else if (order === 'updationAsc') {
+      orderBy.updatedAt = 'asc';
+    } else if (order === 'updationDesc') {
+      orderBy.updatedAt = 'desc';
+    } else {
+      orderBy.createdAt = 'desc';
+    }
+
+    // Get workflow executions with pagination
+    const [executions, total] = await Promise.all([
+      this.prisma.workflowExecution.findMany({
+        where: whereClause,
+        orderBy,
+        skip,
+        take: pageSize,
+      }),
+      this.prisma.workflowExecution.count({
+        where: whereClause,
+      }),
+    ]);
+
+    return { executions, total };
+  }
+
+  /**
    * Get the currently active (running) workflow execution for a canvas
    * @param user - The user requesting the execution
    * @param canvasId - The canvas ID
@@ -1114,35 +1211,6 @@ export class WorkflowService {
 
     // Fall back to latest execution
     return this.getLatestWorkflowDetail(user, canvasId);
-  }
-
-  /**
-   * List all workflow executions for a canvas (run history)
-   * @param user - The user requesting the list
-   * @param canvasId - The canvas ID (workflowId)
-   * @param options - Pagination options
-   * @returns Promise<WorkflowExecution[]> - List of executions
-   */
-  async listWorkflowExecutions(
-    user: User,
-    canvasId: string,
-    options?: { limit?: number; offset?: number },
-  ) {
-    const { limit = 20, offset = 0 } = options ?? {};
-
-    const executions = await this.prisma.workflowExecution.findMany({
-      where: { canvasId, uid: user.uid },
-      orderBy: { createdAt: 'desc' },
-      skip: offset,
-      take: limit,
-    });
-
-    // Get total count
-    const total = await this.prisma.workflowExecution.count({
-      where: { canvasId, uid: user.uid },
-    });
-
-    return { executions, total };
   }
 
   /**

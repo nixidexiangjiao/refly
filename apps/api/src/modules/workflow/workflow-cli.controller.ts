@@ -1531,11 +1531,11 @@ export class WorkflowCliController {
       const limitNum = limit ? Number.parseInt(limit, 10) : 20;
       const offsetNum = offset ? Number.parseInt(offset, 10) : 0;
 
-      const { executions, total } = await this.workflowService.listWorkflowExecutions(
-        user,
-        workflowId,
-        { limit: limitNum, offset: offsetNum },
-      );
+      const { executions, total } = await this.workflowService.listWorkflowExecutions(user, {
+        canvasId: workflowId,
+        page: offsetNum / limitNum + 1,
+        pageSize: limitNum,
+      });
 
       const runs = executions.map((exec) => ({
         runId: exec.executionId,

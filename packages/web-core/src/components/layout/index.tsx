@@ -12,6 +12,7 @@ import { authChannel } from '@refly-packages/ai-workspace-common/utils/auth-chan
 import { LoginModal } from '../../components/login-modal';
 import { SubscribeModal } from '@refly-packages/ai-workspace-common/components/settings/subscribe-modal';
 import { ClaimedVoucherPopup } from '@refly-packages/ai-workspace-common/components/voucher/claimed-voucher-popup';
+import { EarnedVoucherPopup } from '@refly-packages/ai-workspace-common/components/voucher/earned-voucher-popup';
 import { VerificationModal } from '../../components/verification-modal';
 import { ResetPasswordModal } from '../../components/reset-password-modal';
 import { InvitationCodeModal } from '../../components/invitation-code-modal';
@@ -37,7 +38,7 @@ import { useRouteCollapse } from '@refly-packages/ai-workspace-common/hooks/use-
 import cn from 'classnames';
 import { FormOnboardingModal } from '../form-onboarding-modal';
 import { OnboardingSuccessModal } from '../onboarding-success-modal';
-
+import { PureCopilotModal } from '../pure-copilot-modal';
 const Content = Layout.Content;
 
 interface AppLayoutProps {
@@ -243,9 +244,11 @@ export const AppLayout = (props: AppLayoutProps) => {
         <FormOnboardingModal />
         <OnboardingSuccessModal />
         <InvitationCodeModal />
+        <PureCopilotModal />
         <ResetPasswordModal />
         <SubscribeModal />
         <ClaimedVoucherPopup />
+        <EarnedVoucherPopup />
         <CanvasListModal visible={showCanvasListModal} setVisible={setShowCanvasListModal} />
         <LibraryModal visible={showLibraryModal} setVisible={setShowLibraryModal} />
         <ImportResourceModal />
