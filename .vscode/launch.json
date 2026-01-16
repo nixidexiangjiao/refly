@@ -13,13 +13,16 @@
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "env": {
-        "NODE_OPTIONS": "--inspect=0.0.0.0:9229"
+        "NODE_OPTIONS": "--inspect=0.0.0.0:9229 --enable-source-maps"
       },
       "autoAttachChildProcesses": true,
       "skipFiles": ["<node_internals>/**"],
       "sourceMaps": true,
-      "resolveSourceMapLocations": ["${workspaceFolder}/**", "!**/node_modules/**"],
-      "outFiles": ["${workspaceFolder}/apps/api/dist/**/*.js"]
+      "resolveSourceMapLocations": ["${workspaceFolder}/**"],
+      "outFiles": [
+        "${workspaceFolder}/apps/api/dist/**/*.js",
+        "${workspaceFolder}/packages/*/dist/**/*.js"
+      ]
     },
     {
       "type": "node",
@@ -32,8 +35,11 @@
       "remoteRoot": "${workspaceFolder}",
       "skipFiles": ["<node_internals>/**"],
       "sourceMaps": true,
-      "resolveSourceMapLocations": ["${workspaceFolder}/**", "!**/node_modules/**"],
-      "outFiles": ["${workspaceFolder}/apps/api/dist/**/*.js"]
+      "resolveSourceMapLocations": ["${workspaceFolder}/**"],
+      "outFiles": [
+        "${workspaceFolder}/apps/api/dist/**/*.js",
+        "${workspaceFolder}/packages/*/dist/**/*.js"
+      ]
     },
     {
       "type": "node",
@@ -44,7 +50,7 @@
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "env": {
-        "NODE_OPTIONS": "--inspect=0.0.0.0:9229",
+        "NODE_OPTIONS": "--inspect=0.0.0.0:9229 --enable-source-maps",
         "DEBUG": "refly:tool:*",
         "DEBUG_TO_FILE": "true",
         "DEBUG_DIR": "${workspaceFolder}/debug-logs",
@@ -53,8 +59,11 @@
       "autoAttachChildProcesses": true,
       "skipFiles": ["<node_internals>/**"],
       "sourceMaps": true,
-      "resolveSourceMapLocations": ["${workspaceFolder}/**", "!**/node_modules/**"],
-      "outFiles": ["${workspaceFolder}/apps/api/dist/**/*.js"],
+      "resolveSourceMapLocations": ["${workspaceFolder}/**"],
+      "outFiles": [
+        "${workspaceFolder}/apps/api/dist/**/*.js",
+        "${workspaceFolder}/packages/*/dist/**/*.js"
+      ],
       "presentation": {
         "hidden": false,
         "group": "debug",

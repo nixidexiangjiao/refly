@@ -8,7 +8,7 @@
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
     "target": "es2021",
-    "sourceMap": false,
+    "sourceMap": true,
     "inlineSourceMap": false,
     "rootDir": "./src",
     "outDir": "./dist",
@@ -29,15 +29,35 @@
   "include": ["src/**/*", "*.json"],
   "exclude": ["node_modules", "dist"],
   "references": [
-    { "path": "../../packages/errors" },
-    { "path": "../../packages/agent-tools" },
-    { "path": "../../packages/i18n" },
-    { "path": "../../packages/telemetry-node" },
-    { "path": "../../packages/providers" },
-    { "path": "../../packages/openapi-schema" },
-    { "path": "../../packages/common-types" },
-    { "path": "../../packages/utils" },
-    { "path": "../../packages/canvas-common" },
-    { "path": "../../packages/skill-template" }
+    {
+      "path": "../../packages/errors"
+    },
+    {
+      "path": "../../packages/agent-tools"
+    },
+    {
+      "path": "../../packages/i18n"
+    },
+    {
+      "path": "../../packages/telemetry-node"
+    },
+    {
+      "path": "../../packages/providers"
+    },
+    {
+      "path": "../../packages/openapi-schema"
+    },
+    {
+      "path": "../../packages/common-types"
+    },
+    {
+      "path": "../../packages/utils"
+    },
+    {
+      "path": "../../packages/canvas-common"
+    },
+    {
+      "path": "../../packages/skill-template"
+    }
   ]
 }

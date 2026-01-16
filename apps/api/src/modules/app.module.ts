@@ -86,6 +86,7 @@ class CustomThrottlerGuard extends ThrottlerGuard {
     }),
     LoggerModule.forRoot({
       pinoHttp: {
+        level: process.env.LOG_LEVEL || 'info',
         redact: {
           paths: ['pid', 'hostname', 'req.headers'],
           remove: true,
