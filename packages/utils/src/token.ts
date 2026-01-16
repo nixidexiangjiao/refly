@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 // @ts-ignore - kitoken/node has no type declarations
 import { Kitoken } from 'kitoken/node';
 
@@ -8,7 +10,6 @@ const DEFAULT_CHARS_PER_TOKEN = 3.5;
 const HEAD_RATIO = 0.7;
 const SEPARATOR = '\n\n[... truncated ...]\n\n';
 const SEPARATOR_TOKENS = 5;
-const MODEL_URL = 'https://static.refly.ai/models/o200k_base.txt';
 
 // ============== Kitoken Initialization ==============
 
@@ -29,14 +30,8 @@ export async function initTokenizer(): Promise<void> {
   }
 
   initPromise = (async () => {
-    const response = await fetch(MODEL_URL);
-    if (!response.ok) {
-      throw new Error(
-        `Failed to download tokenizer model: ${response.status} ${response.statusText}`,
-      );
-    }
-    const arrayBuffer = await response.arrayBuffer();
-    const model = Buffer.from(arrayBuffer);
+    const modelPath = path.join(__dirname, 'o200k_base.txt');
+    const model = fs.readFileSync(modelPath);
     encoder = new Kitoken(model);
   })();
 

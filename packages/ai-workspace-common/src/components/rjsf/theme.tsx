@@ -248,7 +248,7 @@ const ObjectFieldTemplate = (props: RjsfObjectFieldTemplateProps) => {
 
   // Pagination logic
   const totalPages = progressSteps.length;
-  const isPaginated = totalPages > 1;
+  const isPaginated = totalPages >= 1;
 
   // Get current page field
   const currentStep = progressSteps[currentPage];
