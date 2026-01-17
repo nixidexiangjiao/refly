@@ -121,6 +121,7 @@ export class Agent extends BaseSkill {
       messages,
       images,
       modelInfo,
+      provider: config?.configurable?.provider?.providerKey,
     });
 
     return { requestMessages, sources, systemPrompt, modelInfo };
@@ -246,7 +247,12 @@ export class Agent extends BaseSkill {
 
         // Apply context caching for each iteration if the model supports it
         // This ensures new messages (AIMessage with tool_calls, ToolMessage) get cache points
-        currentMessages = applyAgentLoopCaching(currentMessages, supportsContextCaching);
+        const providerKey = config?.configurable?.provider?.providerKey;
+        currentMessages = applyAgentLoopCaching(
+          currentMessages,
+          supportsContextCaching,
+          providerKey,
+        );
 
         // Use llmForGraph, which is the (potentially tool-bound) LLM instance for the graph
         const response = await llmForGraph.invoke(currentMessages);

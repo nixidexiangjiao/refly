@@ -56,6 +56,7 @@ export const buildFinalRequestMessages = ({
   messages,
   images,
   modelInfo,
+  provider,
 }: {
   systemPrompt: string;
   userPrompt: string;
@@ -63,6 +64,7 @@ export const buildFinalRequestMessages = ({
   messages: BaseMessage[];
   images: string[];
   modelInfo?: LLMModelConfig;
+  provider?: string;
 }) => {
   // Validate userPrompt is not empty - AWS Bedrock Converse API requires non-empty human message content
   if (!userPrompt || userPrompt.trim() === '') {
@@ -108,7 +110,7 @@ export const buildFinalRequestMessages = ({
     // 2. Check against minimum token thresholds
     // 3. Skip caching if below the threshold
 
-    return applyContextCaching(requestMessages);
+    return applyContextCaching(requestMessages, provider);
   }
 
   return requestMessages;
@@ -205,7 +207,7 @@ const stripCachePoint = (message: BaseMessage): BaseMessage => {
  * Returns the cached message if successful, or null if caching is not applicable.
  * Note: Assumes cache points have been stripped from the message before calling.
  */
-const tryAddCachePoint = (message: BaseMessage): BaseMessage | null => {
+const tryAddCachePoint = (message: BaseMessage, provider?: string): BaseMessage | null => {
   const messageType = message._getType();
 
   if (messageType === 'system') {
@@ -218,14 +220,26 @@ const tryAddCachePoint = (message: BaseMessage): BaseMessage | null => {
       return null;
     }
 
+    if (provider === 'bedrock') {
+      return new SystemMessage({
+        content: [
+          {
+            type: 'text',
+            text: textContent,
+          },
+          {
+            cachePoint: { type: 'default' },
+          },
+        ],
+      } as BaseMessageFields);
+    }
+
     return new SystemMessage({
       content: [
         {
           type: 'text',
           text: textContent,
-        },
-        {
-          cachePoint: { type: 'default' },
+          cache_control: { type: 'ephemeral' },
         },
       ],
     } as BaseMessageFields);
@@ -238,14 +252,26 @@ const tryAddCachePoint = (message: BaseMessage): BaseMessage | null => {
         return null;
       }
 
+      if (provider === 'bedrock') {
+        return new HumanMessage({
+          content: [
+            {
+              type: 'text',
+              text: message.content,
+            },
+            {
+              cachePoint: { type: 'default' },
+            },
+          ],
+        } as BaseMessageFields);
+      }
+
       return new HumanMessage({
         content: [
           {
             type: 'text',
             text: message.content,
-          },
-          {
-            cachePoint: { type: 'default' },
+            cache_control: { type: 'ephemeral' },
           },
         ],
       } as BaseMessageFields);
@@ -265,14 +291,26 @@ const tryAddCachePoint = (message: BaseMessage): BaseMessage | null => {
 
       // For array content (like images mixed with text),
       // add cachePoint marker at the end
-      return new HumanMessage({
-        content: [
-          ...message.content,
-          {
-            cachePoint: { type: 'default' },
-          },
-        ],
-      } as BaseMessageFields);
+      if (provider === 'bedrock') {
+        return new HumanMessage({
+          content: [
+            ...message.content,
+            {
+              cachePoint: { type: 'default' },
+            },
+          ],
+        } as BaseMessageFields);
+      }
+
+      // For non-bedrock, append cache_control to the last text block if possible
+      const newContent = [...(message.content as any[])];
+      for (let i = newContent.length - 1; i >= 0; i--) {
+        if (newContent[i].type === 'text') {
+          newContent[i] = { ...newContent[i], cache_control: { type: 'ephemeral' } };
+          return new HumanMessage({ content: newContent } as BaseMessageFields);
+        }
+      }
+      return null;
     }
   }
 
@@ -290,15 +328,29 @@ const tryAddCachePoint = (message: BaseMessage): BaseMessage | null => {
         return null;
       }
 
-      // Build content array with text and cachePoint
+      if (provider === 'bedrock') {
+        // Build content array with text and cachePoint
+        return new AIMessage({
+          content: [
+            {
+              type: 'text',
+              text: message.content,
+            },
+            {
+              cachePoint: { type: 'default' },
+            },
+          ],
+          tool_calls: aiMessage.tool_calls,
+          additional_kwargs: aiMessage.additional_kwargs,
+        } as BaseMessageFields);
+      }
+
       return new AIMessage({
         content: [
           {
             type: 'text',
             text: message.content,
-          },
-          {
-            cachePoint: { type: 'default' },
+            cache_control: { type: 'ephemeral' },
           },
         ],
         tool_calls: aiMessage.tool_calls,
@@ -319,16 +371,32 @@ const tryAddCachePoint = (message: BaseMessage): BaseMessage | null => {
         return null;
       }
 
-      return new AIMessage({
-        content: [
-          ...message.content,
-          {
-            cachePoint: { type: 'default' },
-          },
-        ],
-        tool_calls: aiMessage.tool_calls,
-        additional_kwargs: aiMessage.additional_kwargs,
-      } as BaseMessageFields);
+      if (provider === 'bedrock') {
+        return new AIMessage({
+          content: [
+            ...message.content,
+            {
+              cachePoint: { type: 'default' },
+            },
+          ],
+          tool_calls: aiMessage.tool_calls,
+          additional_kwargs: aiMessage.additional_kwargs,
+        } as BaseMessageFields);
+      }
+
+      // For non-bedrock, append cache_control to the last text block if possible
+      const newContent = [...(message.content as any[])];
+      for (let i = newContent.length - 1; i >= 0; i--) {
+        if (newContent[i].type === 'text') {
+          newContent[i] = { ...newContent[i], cache_control: { type: 'ephemeral' } };
+          return new AIMessage({
+            content: newContent,
+            tool_calls: aiMessage.tool_calls,
+            additional_kwargs: aiMessage.additional_kwargs,
+          } as BaseMessageFields);
+        }
+      }
+      return null;
     }
   }
 
@@ -338,7 +406,7 @@ const tryAddCachePoint = (message: BaseMessage): BaseMessage | null => {
   return null;
 };
 
-const applyContextCaching = (messages: BaseMessage[]): BaseMessage[] => {
+const applyContextCaching = (messages: BaseMessage[], provider?: string): BaseMessage[] => {
   if (messages.length <= 1) return messages;
 
   // First, strip all existing cache points to ensure clean state
@@ -350,7 +418,7 @@ const applyContextCaching = (messages: BaseMessage[]): BaseMessage[] => {
 
   // 1. Global Static Point: Try to cache system message at index 0
   if (result.length > 0) {
-    const cachedSystemMessage = tryAddCachePoint(result[0]);
+    const cachedSystemMessage = tryAddCachePoint(result[0], provider);
     if (cachedSystemMessage) {
       result[0] = cachedSystemMessage;
     }
@@ -359,7 +427,7 @@ const applyContextCaching = (messages: BaseMessage[]): BaseMessage[] => {
   // 2. Session Dynamic Points: Scan from end, try to cache up to 3 messages
   // Skip index 0 (system message already handled)
   for (let i = result.length - 1; i > 0 && dynamicCacheCount < maxDynamicCachePoints; i--) {
-    const cachedMessage = tryAddCachePoint(result[i]);
+    const cachedMessage = tryAddCachePoint(result[i], provider);
     if (cachedMessage) {
       result[i] = cachedMessage;
       dynamicCacheCount++;
@@ -381,17 +449,19 @@ const applyContextCaching = (messages: BaseMessage[]): BaseMessage[] => {
  *
  * @param messages - The current message array
  * @param supportsContextCaching - Whether the model supports context caching
+ * @param provider - The model provider key
  * @returns Messages with appropriate cache points applied
  */
 export const applyAgentLoopCaching = (
   messages: BaseMessage[],
   supportsContextCaching: boolean,
+  provider?: string,
 ): BaseMessage[] => {
   if (!supportsContextCaching || messages.length <= 1) {
     return messages;
   }
 
-  return applyContextCaching(messages);
+  return applyContextCaching(messages, provider);
 };
 
 /**
